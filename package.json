@@ -1,0 +1,28 @@
+{
+  "name": "dsh-app-usage",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local DSH session statistics for the DeepSeek Harness: token trends, activity heatmap and per-provider breakdown (Vue + Apache ECharts)",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web"
+    }
+  },
+  "dependencies": {
+    "@vitejs/plugin-vue": "^6.0.9",
+    "echarts": "^6.1.0",
+    "happy-dom": "^20.14.5",
+    "vite": "^8.3.3",
+    "vite-plugin-css-injected-by-js": "^5.0.2",
+    "vue": "^3.5.43",
+    "vue-echarts": "^8.3.1"
+  },
+  "license": "MIT"
+}
