@@ -1,6 +1,6 @@
 // Option-builder smoke test for the provider-aware App Usage charts: runs the
 // pure builders against a realistic multi-provider payload plus degenerate ones.
-import { buildDailyOption, buildDonutOption, buildHeatmapOption, dayList, providerNames, providerTotals, modelTotals } from "../src/options.js";
+import { buildDailyOption, buildDonutOption, buildHeatmapOption, dayList, modelRows, providerNames, providerTotals, modelTotals } from "../src/options.js";
 
 const days = {
 	"2026-10-05": { zai: { "glm-5.3": { input: 10, output: 20, total: 30 } } },
@@ -71,6 +71,23 @@ if (cached[0]?.reported !== 1015) {
 	failed = true;
 }
 console.log(`cache semantics: counted=${cached[0]?.total} cache=${cached[0]?.cache} reported=${cached[0]?.reported}`);
+
+// The model breakdown: one row per model, with its days and last use.
+const breakdown = modelRows(dayList(days, 30), new Set(providerNames(dayList(days, 30))));
+const first = breakdown[0];
+if (breakdown.length !== 3) {
+	console.log(`[FAIL] ${breakdown.length} model rows, expected 3`);
+	failed = true;
+}
+if (first?.model !== "anthropic/claude-sonnet-5" || first?.total !== 300) {
+	console.log(`[FAIL] the top model row is ${JSON.stringify(first)}`);
+	failed = true;
+}
+if (first?.days !== 1 || first?.lastDate !== "2026-10-06") {
+	console.log(`[FAIL] the model row does not carry its days/last use: ${JSON.stringify(first)}`);
+	failed = true;
+}
+console.log(`model rows: ${breakdown.map((row) => `${row.provider}/${row.model}=${row.total}`).join(", ")}`);
 
 console.log(failed ? "OPTIONS TEST FAILED" : "OPTIONS TEST OK");
 process.exit(failed ? 1 : 0);

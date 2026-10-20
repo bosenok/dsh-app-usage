@@ -17,6 +17,7 @@ import {
 	fmtDuration,
 	heatmapPanelHeight,
 	heatmapValues,
+	modelRows,
 	modelTotals,
 	providerColor,
 	providerNames,
@@ -57,14 +58,14 @@ const rows = computed(() => providerTotals(last30.value, enabled.value));
 const grandTotal = computed(() => rows.value.reduce((sum, row) => sum + row.total, 0));
 const kpis = computed(() => activityKpis(allDays.value, enabled.value, state.data?.activity));
 
-const dailyOption = computed(() => buildDailyOption(last30.value, enabled.value, colorOf));
+const dailyOption = computed(() => buildDailyOption(scopedDays.value, enabled.value, colorOf));
 const toolsOption = computed(() => buildToolsOption(last30.value, state.data?.tools, 6));
 const speedOption = computed(() => buildSpeedOption(last30.value, state.data?.speed));
 const hasSpeed = computed(() => (state.data?.speed != null) && Object.keys(state.data.speed).length > 0);
 
 const heatmapOption = computed(() => {
-	const values = heatmapValues(heatmapDays.value, enabled.value, heatmapMode.value);
-	return buildHeatmapOption(heatmapDays.value, enabled.value, values, heatmapCellSize.value);
+	const values = heatmapValues(scopedHeatmapDays.value, enabled.value, heatmapMode.value);
+	return buildHeatmapOption(scopedHeatmapDays.value, enabled.value, values, heatmapCellSize.value);
 });
 
 // The calendar keeps SQUARE cells; its edge is derived from the measured panel
@@ -102,7 +103,48 @@ function toggleModels(provider) {
 	expandedProvider.value = expandedProvider.value === provider ? null : provider;
 }
 
+// The model breakdown: every model that ran, with its share of the work.
+const modelSort = ref("tokens");
+const showAllModels = ref(false);
+const selectedModel = ref(null);
+const modelRowsAll = computed(() => modelRows(last30.value, enabled.value));
+const sortedModels = computed(() => {
+	const list = [...modelRowsAll.value];
+	if (modelSort.value === "cache") return list.sort((a, b) => b.cache - a.cache || b.total - a.total);
+	if (modelSort.value === "days") return list.sort((a, b) => b.days - a.days || b.total - a.total);
+	return list.sort((a, b) => b.total - a.total);
+});
+const visibleModelRows = computed(() => (showAllModels.value ? sortedModels.value : sortedModels.value.slice(0, 25)));
+function toggleModel(row) {
+	selectedModel.value = selectedModel.value?.key === row.key ? null : { key: row.key, provider: row.provider, model: row.model };
+}
+// A picked model narrows the charts: the same builders read a day list that
+// only carries that provider and model.
+const scopedDays = computed(() => {
+	const pick = selectedModel.value;
+	if (pick === null) return last30.value;
+	return last30.value.map((day) => {
+		const sum = day.providers?.[pick.provider]?.[pick.model];
+		return { date: day.date, providers: sum === undefined ? {} : { [pick.provider]: { [pick.model]: sum } } };
+	});
+});
+const scopedHeatmapDays = computed(() => {
+	const pick = selectedModel.value;
+	if (pick === null) return heatmapDays.value;
+	return heatmapDays.value.map((day) => {
+		const sum = day.providers?.[pick.provider]?.[pick.model];
+		return { date: day.date, providers: sum === undefined ? {} : { [pick.provider]: { [pick.model]: sum } } };
+	});
+});
+const scopeLabel = computed(() => (selectedModel.value === null ? null : `${selectedModel.value.provider} · ${selectedModel.value.model}`));
+
 const donutOption = computed(() => {
+	if (donutMode.value === "models") {
+		return buildDonutOption(
+			sortedModels.value.map((row) => ({ name: row.model, value: row.total, provider: row.provider })),
+			(name, index) => colorOf(sortedModels.value[index]?.provider ?? name, index),
+		);
+	}
 	if (rows.value.length === 1) {
 		const only = rows.value[0];
 		return buildDonutOption(
@@ -115,7 +157,11 @@ const donutOption = computed(() => {
 		(name) => colorOf(name),
 	);
 });
-const donutTitle = computed(() => (rows.value.length === 1 ? `Models · ${rows.value[0].provider}` : "Providers · 30 days"));
+const donutMode = ref("providers");
+const donutTitle = computed(() => {
+	if (donutMode.value === "models") return "Models · 30 days";
+	return rows.value.length === 1 ? `Models · ${rows.value[0].provider}` : "Providers · 30 days";
+});
 
 const updatedAt = computed(() => (state.at ? new Date(state.at).toLocaleTimeString() : ""));
 
@@ -185,9 +231,9 @@ function share(total) {
 			<div class="usage-grid">
 				<div class="usage-panel">
 					<div class="usage-panel-head">
-						<span class="usage-panel-title">{{ trendTab === "models" ? "Daily tokens by provider" : "Tool calls by day" }} · last 30 days</span>
+						<span class="usage-panel-title">{{ trendTab === "models" ? (scopeLabel ?? "Daily tokens by provider") : "Tool calls by day" }} · last 30 days</span>
 						<span class="usage-tabs">
-							<button class="usage-tab" :class="{ on: trendTab === 'models' }" @click="trendTab = 'models'">Models</button>
+							<button class="usage-tab" :class="{ on: trendTab === 'models' }" @click="trendTab = 'models'">Tokens</button>
 							<button class="usage-tab" :class="{ on: trendTab === 'tools' }" @click="trendTab = 'tools'">Tools</button>
 						</span>
 					</div>
@@ -195,14 +241,20 @@ function share(total) {
 					<VChart v-else class="usage-chart" :option="toolsOption" autoresize />
 				</div>
 				<div class="usage-panel">
-					<div class="usage-panel-title">{{ donutTitle }}</div>
+					<div class="usage-panel-head">
+						<span class="usage-panel-title">{{ donutTitle }}</span>
+						<span class="usage-tabs">
+							<button class="usage-tab" :class="{ on: donutMode === 'providers' }" @click="donutMode = 'providers'">Providers</button>
+							<button class="usage-tab" :class="{ on: donutMode === 'models' }" @click="donutMode = 'models'">Models</button>
+						</span>
+					</div>
 					<VChart class="usage-chart" :option="donutOption" autoresize />
 				</div>
 			</div>
 
 			<div class="usage-panel">
 				<div class="usage-panel-head">
-					<span class="usage-panel-title">Token activity · input+output · last 6 months</span>
+					<span class="usage-panel-title">Token activity{{ scopeLabel ? " · " + scopeLabel : "" }} · input+output · last 6 months</span>
 					<span class="usage-tabs">
 						<button class="usage-tab" :class="{ on: heatmapMode === 'daily' }" @click="heatmapMode = 'daily'">Daily</button>
 						<button class="usage-tab" :class="{ on: heatmapMode === 'weekly' }" @click="heatmapMode = 'weekly'">Weekly</button>
@@ -231,6 +283,43 @@ function share(total) {
 						<span v-if="row.cache > 0" class="usage-row-cache">cache {{ fmt(row.cache) }}</span>
 					</span>
 				</div>
+			</div>
+
+			<div class="usage-panel">
+				<div class="usage-panel-head">
+					<span class="usage-panel-title">Models · last 30 days</span>
+					<span class="usage-tabs">
+						<button class="usage-tab" :class="{ on: modelSort === 'tokens' }" @click="modelSort = 'tokens'">Tokens</button>
+						<button class="usage-tab" :class="{ on: modelSort === 'cache' }" @click="modelSort = 'cache'">Cache</button>
+						<button class="usage-tab" :class="{ on: modelSort === 'days' }" @click="modelSort = 'days'">Days</button>
+					</span>
+				</div>
+				<div v-if="selectedModel !== null" class="usage-filter">
+					<span>charts filtered by {{ selectedModel.provider }} · {{ selectedModel.model }}</span>
+					<button class="usage-chip ghost" @click="selectedModel = null">clear</button>
+				</div>
+				<div class="usage-table usage-model-table">
+					<div
+						v-for="row in visibleModelRows"
+						:key="row.key"
+						class="usage-model-row"
+						:class="{ on: selectedModel?.key === row.key }"
+						:title="`${row.provider} · ${row.model}`"
+						@click="toggleModel(row)"
+					>
+						<span class="usage-dot" :style="{ background: colorOf(row.provider) }" />
+						<span class="usage-model-name">{{ row.model }}</span>
+						<span class="usage-model-provider">{{ row.provider }}</span>
+						<span class="usage-model-total">{{ fmt(row.total) }}</span>
+						<span class="usage-model-cache">{{ row.cache > 0 ? `cache ${fmt(row.cache)}` : "" }}</span>
+						<span class="usage-model-share">{{ share(row.total) }}%</span>
+						<span class="usage-model-days">{{ row.days }}d</span>
+						<span class="usage-model-last">{{ row.lastDate ?? "-" }}</span>
+					</div>
+				</div>
+				<button v-if="sortedModels.length > 25" class="usage-row-more usage-model-more" @click="showAllModels = !showAllModels">
+					{{ showAllModels ? "−" : `+${sortedModels.length - 25} more` }}
+				</button>
 			</div>
 
 			<div class="usage-foot">
@@ -432,6 +521,62 @@ function share(total) {
 }
 .usage-row-share {
 	color: var(--usage-dim);
+}
+.usage-model-row {
+	align-items: center;
+	border-bottom: 1px solid #2a2a2a;
+	cursor: pointer;
+	display: grid;
+	font-size: 12px;
+	gap: 8px;
+	grid-template-columns: 16px minmax(0, 1fr) 120px 90px 110px 52px 40px 92px;
+	padding: 6px 10px;
+}
+.usage-model-row:last-child {
+	border-bottom: none;
+}
+.usage-model-row:hover {
+	background: #262626;
+}
+.usage-model-row.on {
+	background: #2b2b2b;
+}
+.usage-model-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.usage-model-provider,
+.usage-model-cache,
+.usage-model-last {
+	color: var(--usage-dim);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.usage-model-total {
+	font-weight: 600;
+	text-align: right;
+}
+.usage-model-share,
+.usage-model-days {
+	color: var(--usage-dim);
+	text-align: right;
+}
+.usage-model-last {
+	text-align: right;
+}
+.usage-filter {
+	align-items: center;
+	color: var(--usage-dim);
+	display: flex;
+	font-size: 12px;
+	gap: 8px;
+	margin-bottom: 6px;
+}
+.usage-model-more {
+	display: block;
+	margin: 8px auto 0;
 }
 .usage-row-more {
 	background: transparent;

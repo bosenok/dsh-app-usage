@@ -77,6 +77,36 @@ export function providerTotals(days, enabled) {
 		.sort((a, b) => b.total - a.total);
 }
 
+/**
+ * One row per model across the enabled providers: the counted tokens, the
+ * cache reads beside them, how many days it was used and when it was last seen.
+ * @param days - the day list.
+ * @param enabled - the providers to include (null = all of them).
+ * @returns the model rows, most used first.
+ */
+export function modelRows(days, enabled) {
+	const rows = new Map();
+	for (const day of days) {
+		for (const [provider, models] of Object.entries(day.providers ?? {})) {
+			if (enabled != null && enabled.has(provider) === false) continue;
+			for (const [model, sum] of Object.entries(models ?? {})) {
+				const key = `${provider}\u0000${model}`;
+				const row = rows.get(key) ?? { key, provider, model, total: 0, cache: 0, reported: 0, days: 0, lastDate: null };
+				const total = countedTokens(sum);
+				row.total += total;
+				row.cache += cacheTokens(sum);
+				row.reported += Number(sum?.total ?? 0);
+				if (total > 0 || cacheTokens(sum) > 0) {
+					row.days += 1;
+					if (row.lastDate === null || day.date > row.lastDate) row.lastDate = day.date;
+				}
+				rows.set(key, row);
+			}
+		}
+	}
+	return [...rows.values()].filter((row) => row.total > 0).sort((a, b) => b.total - a.total);
+}
+
 /** Model totals across every enabled provider (used by the single-provider donut). */
 export function modelTotals(days, enabled) {
 	const totals = new Map();
