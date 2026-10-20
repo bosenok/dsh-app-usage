@@ -93,6 +93,15 @@ const heatmapCellSize = computed(() => {
 // The calendar draws seven rows; the panel is sized to hold them all.
 const heatmapHeight = computed(() => heatmapPanelHeight(heatmapCellSize.value));
 
+// A provider row lists three models; the rest stay one click away.
+const expandedProvider = ref(null);
+function visibleModels(row) {
+	return expandedProvider.value === row.provider ? row.models : row.models.slice(0, 3);
+}
+function toggleModels(provider) {
+	expandedProvider.value = expandedProvider.value === provider ? null : provider;
+}
+
 const donutOption = computed(() => {
 	if (rows.value.length === 1) {
 		const only = rows.value[0];
@@ -164,7 +173,8 @@ function share(total) {
 			</div>
 
 			<div class="usage-kpis">
-				<div class="usage-kpi"><span class="usage-kpi-value">{{ fmt(kpis.total) }}</span><span class="usage-kpi-label">total tokens</span></div>
+				<div class="usage-kpi"><span class="usage-kpi-value">{{ fmt(kpis.total) }}</span><span class="usage-kpi-label">tokens · input+output</span></div>
+				<div class="usage-kpi"><span class="usage-kpi-value">{{ fmt(kpis.cache) }}</span><span class="usage-kpi-label">cache reads</span></div>
 				<div class="usage-kpi"><span class="usage-kpi-value">{{ fmt(kpis.peak) }}</span><span class="usage-kpi-label">peak tokens · {{ kpis.peakDate ?? "-" }}</span></div>
 				<div class="usage-kpi"><span class="usage-kpi-value">{{ fmtDuration(kpis.durationMs) }}</span><span class="usage-kpi-label">active time</span></div>
 				<div class="usage-kpi"><span class="usage-kpi-value">{{ kpis.current }}d</span><span class="usage-kpi-label">current streak</span></div>
@@ -192,7 +202,7 @@ function share(total) {
 
 			<div class="usage-panel">
 				<div class="usage-panel-head">
-					<span class="usage-panel-title">Token activity · last 6 months</span>
+					<span class="usage-panel-title">Token activity · input+output · last 6 months</span>
 					<span class="usage-tabs">
 						<button class="usage-tab" :class="{ on: heatmapMode === 'daily' }" @click="heatmapMode = 'daily'">Daily</button>
 						<button class="usage-tab" :class="{ on: heatmapMode === 'weekly' }" @click="heatmapMode = 'weekly'">Weekly</button>
@@ -213,12 +223,18 @@ function share(total) {
 					<span class="usage-row-name">{{ row.provider }}</span>
 					<span class="usage-row-total">{{ fmt(row.total) }}</span>
 					<span class="usage-row-share">{{ share(row.total) }}%</span>
-					<span class="usage-row-models">{{ row.models.slice(0, 3).map((entry) => `${entry.model} ${fmt(entry.total)}`).join(" · ") }}</span>
+					<span class="usage-row-models">
+						{{ visibleModels(row).map((entry) => `${entry.model} ${fmt(entry.total)}`).join(" · ") }}
+						<button v-if="row.models.length > 3" class="usage-row-more" @click="toggleModels(row.provider)">
+							{{ expandedProvider === row.provider ? "−" : `+${row.models.length - 3} more` }}
+						</button>
+						<span v-if="row.cache > 0" class="usage-row-cache">cache {{ fmt(row.cache) }}</span>
+					</span>
 				</div>
 			</div>
 
 			<div class="usage-foot">
-				All providers included, nothing filtered · active time counts gaps up to 5 min · decode speed is measured from recorded stream timings
+				All providers included, nothing filtered · tokens = input + output, prompt-cache reads are listed separately · active time counts gaps up to 5 min · decode speed is measured from recorded stream timings
 				<template v-if="state.data?.path"> · snapshot: {{ state.data.path }}</template>
 			</div>
 		</template>
@@ -416,6 +432,25 @@ function share(total) {
 }
 .usage-row-share {
 	color: var(--usage-dim);
+}
+.usage-row-more {
+	background: transparent;
+	border: 1px solid var(--usage-line);
+	border-radius: 6px;
+	color: var(--usage-dim);
+	cursor: pointer;
+	font: inherit;
+	font-size: 11px;
+	margin-left: 4px;
+	padding: 1px 6px;
+}
+.usage-row-more:hover {
+	color: var(--usage-text);
+}
+.usage-row-cache {
+	color: var(--usage-dim);
+	font-size: 11px;
+	margin-left: 6px;
 }
 .usage-row-models {
 	color: #6d6d6d;

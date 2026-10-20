@@ -52,5 +52,25 @@ if (all.reduce((sum, row) => sum + row.total, 0) !== expectedAll) failed = true;
 if (onlyZai.reduce((sum, row) => sum + row.total, 0) !== expectedZai) failed = true;
 if (onlyZai.length !== 1 || onlyZai[0].provider !== "zai") failed = true;
 
+// Cache reads are not work: they must not inflate the counted totals, and the
+// provider-reported sum (input + output + cache) must stay visible beside them.
+const cached = providerTotals(
+	dayList({ "2026-10-08": { openrouter: { m: { input: 10, output: 5, cache: 1000, total: 1015 } } } }, 30),
+	new Set(["openrouter"]),
+);
+if (cached[0]?.total !== 15) {
+	console.log(`[FAIL] counted tokens = ${cached[0]?.total}, expected 15`);
+	failed = true;
+}
+if (cached[0]?.cache !== 1000) {
+	console.log(`[FAIL] cache reads = ${cached[0]?.cache}, expected 1000`);
+	failed = true;
+}
+if (cached[0]?.reported !== 1015) {
+	console.log(`[FAIL] reported total = ${cached[0]?.reported}, expected 1015`);
+	failed = true;
+}
+console.log(`cache semantics: counted=${cached[0]?.total} cache=${cached[0]?.cache} reported=${cached[0]?.reported}`);
+
 console.log(failed ? "OPTIONS TEST FAILED" : "OPTIONS TEST OK");
 process.exit(failed ? 1 : 0);

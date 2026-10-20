@@ -16,6 +16,25 @@ export function fmt(n) {
 	return String(value);
 }
 
+/**
+ * The tokens the panel counts: fresh input plus generated output.
+ * The provider's own `total` also carries the prompt cache it re-read on every
+ * turn, which can dwarf the real work, so it is kept apart instead of summed in.
+ * @param sum - one model/day sum {input, output, cache, total}.
+ * @returns the counted tokens.
+ */
+export function countedTokens(sum) {
+	const input = Number(sum?.input ?? 0);
+	const output = Number(sum?.output ?? 0);
+	if (input === 0 && output === 0) return Number(sum?.total ?? 0);
+	return input + output;
+}
+
+/** Tokens the provider served from its prompt cache (re-read context). */
+export function cacheTokens(sum) {
+	return Number(sum?.cache ?? 0);
+}
+
 /** Last `count` days as [{date, providers}], ascending. */
 export function dayList(daysObject, count) {
 	const raw = daysObject ?? {};
@@ -35,9 +54,11 @@ export function providerTotals(days, enabled) {
 	for (const day of days) {
 		for (const [provider, models] of Object.entries(day.providers ?? {})) {
 			if (enabled != null && enabled.has(provider) === false) continue;
-			const entry = totals.get(provider) ?? { provider, total: 0, models: new Map() };
+			const entry = totals.get(provider) ?? { provider, total: 0, cache: 0, reported: 0, models: new Map() };
 			for (const [model, sum] of Object.entries(models ?? {})) {
-				const total = Number(sum?.total ?? 0);
+				const total = countedTokens(sum);
+				entry.cache += cacheTokens(sum);
+				entry.reported += Number(sum?.total ?? 0);
 				entry.total += total;
 				entry.models.set(model, (entry.models.get(model) ?? 0) + total);
 			}
@@ -48,6 +69,8 @@ export function providerTotals(days, enabled) {
 		.map((entry) => ({
 			provider: entry.provider,
 			total: entry.total,
+			cache: entry.cache,
+			reported: entry.reported,
 			models: [...entry.models.entries()].map(([model, total]) => ({ model, total })).sort((a, b) => b.total - a.total),
 		}))
 		.filter((entry) => entry.total > 0)
@@ -62,7 +85,7 @@ export function modelTotals(days, enabled) {
 			if (enabled != null && enabled.has(provider) === false) continue;
 			for (const [model, sum] of Object.entries(models ?? {})) {
 				const label = provider === [...(enabled ?? [provider])][0] ? model : `${provider} · ${model}`;
-				totals.set(label, (totals.get(label) ?? 0) + Number(sum?.total ?? 0));
+				totals.set(label, (totals.get(label) ?? 0) + countedTokens(sum));
 			}
 		}
 	}
@@ -97,7 +120,7 @@ export function buildDailyOption(days, enabled, colorOf) {
 			itemStyle: { color: colorOf(provider), borderRadius: [3, 3, 0, 0] },
 			data: days.map((day) => {
 				let total = 0;
-				for (const sum of Object.values(day.providers?.[provider] ?? {})) total += Number(sum?.total ?? 0);
+				for (const sum of Object.values(day.providers?.[provider] ?? {})) total += countedTokens(sum);
 				return total;
 			}),
 		})),
@@ -159,12 +182,15 @@ export function heatmapPanelHeight(cellSize) {
 export function buildHeatmapOption(days, enabled, valuesOverride, cellSize = 14) {
 	const dayMs = 86400000;
 	const values = valuesOverride ?? days.map((day) => {
-		let total = 0;
+		let total = 0, cache = 0;
 		for (const [provider, models] of Object.entries(day.providers ?? {})) {
 			if (enabled != null && enabled.has(provider) === false) continue;
-			for (const sum of Object.values(models ?? {})) total += Number(sum?.total ?? 0);
+			for (const sum of Object.values(models ?? {})) {
+				total += countedTokens(sum);
+				cache += cacheTokens(sum);
+			}
 		}
-		return [day.date, total];
+		return [day.date, total, cache];
 	});
 	// Always render a full year, like ZCode's activity graph: a short data range
 	// with an "auto" cell width would stretch each day into a full-width bar.
@@ -180,7 +206,7 @@ export function buildHeatmapOption(days, enabled, valuesOverride, cellSize = 14)
 		backgroundColor: "transparent",
 		textStyle: { color: "#9a9a9a", fontSize: 11 },
 		tooltip: {
-			formatter: (params) => `${params.value[0]}<br/>${fmt(params.value[1])} tokens`,
+			formatter: (params) => { const value = params.value ?? []; const cache = Number(value[2] ?? 0); return `${value[0]}<br/>${fmt(value[1])} tokens` + (cache > 0 ? `<br/>cache ${fmt(cache)}` : ""); },
 			backgroundColor: "#2b2b2b",
 			borderColor: "#3a3a3a",
 			borderWidth: 1,
@@ -213,12 +239,16 @@ export function buildHeatmapOption(days, enabled, valuesOverride, cellSize = 14)
 /** Total tokens per day across enabled providers, for the whole history. */
 export function dayTotals(days, enabled) {
 	return days.map((day) => {
-		let total = 0;
+		let total = 0, cache = 0, reported = 0;
 		for (const [provider, models] of Object.entries(day.providers ?? {})) {
 			if (enabled != null && enabled.has(provider) === false) continue;
-			for (const sum of Object.values(models ?? {})) total += Number(sum?.total ?? 0);
+			for (const sum of Object.values(models ?? {})) {
+				total += countedTokens(sum);
+				cache += cacheTokens(sum);
+				reported += Number(sum?.total ?? 0);
+			}
 		}
-		return { date: day.date, total };
+		return { date: day.date, total, cache, reported };
 	});
 }
 
@@ -258,7 +288,8 @@ export function activityKpis(days, enabled, activity) {
 		const hasTokens = totals.find((day) => day.date === date)?.total > 0;
 		if (hasTokens) durationMs += Number(value?.activeMs ?? 0);
 	}
-	return { total, peak, peakDate, durationMs, ...streaks(days, enabled) };
+	const cache = totals.reduce((sum, day) => sum + day.cache, 0);
+	return { total, peak, peakDate, durationMs, cache, ...streaks(days, enabled) };
 }
 
 /** Human duration: "32d 22h 16m". */
@@ -375,7 +406,7 @@ export function heatmapValues(days, enabled, mode) {
 		let running = 0;
 		return totals.map((day) => {
 			running += day.total;
-			return [day.date, running];
+			return [day.date, running, day.cache];
 		});
 	}
 	if (mode === "weekly") {
@@ -386,7 +417,7 @@ export function heatmapValues(days, enabled, mode) {
 		};
 		const weekTotals = new Map();
 		for (const day of totals) weekTotals.set(weekOf(day.date), (weekTotals.get(weekOf(day.date)) ?? 0) + day.total);
-		return totals.map((day) => [day.date, weekTotals.get(weekOf(day.date)) ?? 0]);
+		return totals.map((day) => [day.date, weekTotals.get(weekOf(day.date)) ?? 0, day.cache]);
 	}
-	return totals.map((day) => [day.date, day.total]);
+	return totals.map((day) => [day.date, day.total, day.cache]);
 }
