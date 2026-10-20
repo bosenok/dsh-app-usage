@@ -15,6 +15,7 @@ import {
 	dayList,
 	fmt,
 	fmtDuration,
+	heatmapPanelHeight,
 	heatmapValues,
 	modelTotals,
 	providerColor,
@@ -88,6 +89,9 @@ const heatmapCellSize = computed(() => {
 	const weeks = 53;
 	return Math.max(9, Math.min(22, Math.floor((heatmapWidth.value - 44) / weeks)));
 });
+
+// The calendar draws seven rows; the panel is sized to hold them all.
+const heatmapHeight = computed(() => heatmapPanelHeight(heatmapCellSize.value));
 
 const donutOption = computed(() => {
 	if (rows.value.length === 1) {
@@ -195,7 +199,7 @@ function share(total) {
 						<button class="usage-tab" :class="{ on: heatmapMode === 'cumulative' }" @click="heatmapMode = 'cumulative'">Cumulative</button>
 					</span>
 				</div>
-				<VChart ref="heatmapHost" class="usage-chart usage-heatmap" :option="heatmapOption" autoresize />
+				<VChart ref="heatmapHost" class="usage-chart usage-heatmap" :style="{ height: heatmapHeight + 'px' }" :option="heatmapOption" autoresize />
 			</div>
 
 			<div v-if="hasSpeed" class="usage-panel">
@@ -381,7 +385,10 @@ function share(total) {
 	width: 100%;
 }
 .usage-heatmap {
+	/* The height is bound from the measured cell size (heatmapPanelHeight);
+	   this is only the fallback before the first measurement. */
 	height: 152px;
+	min-height: 152px;
 }
 .usage-speed {
 	height: 180px;

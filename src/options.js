@@ -139,6 +139,23 @@ export function buildDonutOption(rows, colorOf) {
  * rectangles, so only `left`/`top` are positioned here and the size comes from
  * the square cell edge.
  */
+/** The calendar's top inset (room for the month labels) in pixels. */
+export const HEATMAP_CALENDAR_TOP = 26;
+
+/** The calendar always draws seven weekday rows. */
+export const HEATMAP_ROWS = 7;
+
+/**
+ * The panel height a calendar of `cellSize` needs: the top inset plus seven
+ * square rows. A shorter panel crops the LAST row, which is how a Sunday row
+ * could show while its Saturday neighbour never appeared.
+ * @param cellSize - the calendar cell edge in pixels.
+ * @returns the required panel height in pixels.
+ */
+export function heatmapPanelHeight(cellSize) {
+	return HEATMAP_CALENDAR_TOP + HEATMAP_ROWS * cellSize + 6;
+}
+
 export function buildHeatmapOption(days, enabled, valuesOverride, cellSize = 14) {
 	const dayMs = 86400000;
 	const values = valuesOverride ?? days.map((day) => {
@@ -173,7 +190,7 @@ export function buildHeatmapOption(days, enabled, valuesOverride, cellSize = 14)
 		},
 		visualMap: { show: false, min: 0, max, inRange: { color: ["#1f2937", "#2563eb", "#93c5fd"] } },
 		calendar: {
-			top: 26,
+			top: HEATMAP_CALENDAR_TOP,
 			left: 34,
 			// Fixed SQUARE cells: `right`/`bottom` are deliberately absent, since a
 			// bounded box makes ECharts stretch the grid into rectangles.
@@ -183,7 +200,9 @@ export function buildHeatmapOption(days, enabled, valuesOverride, cellSize = 14)
 			itemStyle: { color: "#232323", borderColor: "#1b1b1b", borderRadius: 3 },
 			yearLabel: { show: false },
 			monthLabel: { color: "#9a9a9a", fontSize: 10, margin: 6 },
-			dayLabel: { color: "#666", fontSize: 9, margin: 6, nameMap: ["S", "M", "T", "W", "T", "F", "S"] },
+			// `firstDay: 1` starts the weeks on Monday; `nameMap` stays indexed by
+			// the absolute weekday (0 = Sunday), so the rows read M T W T F S S.
+			dayLabel: { color: "#666", fontSize: 9, margin: 6, firstDay: 1, nameMap: ["S", "M", "T", "W", "T", "F", "S"] },
 		},
 		series: [{ type: "heatmap", coordinateSystem: "calendar", data: values }],
 	};

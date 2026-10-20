@@ -3,7 +3,7 @@
 // stretched (rectangular cells) or does not span about a year — the two
 // regressions that made the panel look unlike a classic activity heatmap.
 import { Window } from "happy-dom";
-import { buildHeatmapOption, heatmapValues } from "../src/options.js";
+import { buildHeatmapOption, HEATMAP_CALENDAR_TOP, HEATMAP_ROWS, heatmapPanelHeight, heatmapValues } from "../src/options.js";
 
 const window = new Window({ url: "http://localhost/" });
 for (const key of ["document", "HTMLElement", "Element", "Node", "Text", "SVGElement", "SVGGraphicsElement", "Image", "navigator", "getComputedStyle", "ResizeObserver", "MutationObserver", "CSSStyleSheet", "customElements"]) {
@@ -50,6 +50,22 @@ for (const cellSize of [10, 14, 20]) {
 	window.document.body.appendChild(el);
 	const chart = init(el, null, { width: 1400, height: 220, renderer: "canvas" });
 	chart.setOption(option);
+	// The week starts on Monday and the panel is tall enough for seven rows:
+	// a short panel crops the last row, which read as a missing weekday.
+	if (option.calendar.dayLabel.firstDay !== 1) {
+		console.log(`[FAIL] weeks start on ${option.calendar.dayLabel.firstDay}, expected Monday (1)`);
+		failed = true;
+	}
+	const nameMap = option.calendar.dayLabel.nameMap;
+	if (nameMap[0] !== "S" || nameMap[1] !== "M" || nameMap[6] !== "S") {
+		console.log(`[FAIL] the day names are not indexed by the absolute weekday: ${JSON.stringify(nameMap)}`);
+		failed = true;
+	}
+	const needed = HEATMAP_CALENDAR_TOP + HEATMAP_ROWS * cellSize;
+	if (heatmapPanelHeight(cellSize) < needed) {
+		console.log(`[FAIL] the panel is ${heatmapPanelHeight(cellSize)}px, needs ${needed}px for seven rows`);
+		failed = true;
+	}
 	const cs = chart.getModel().getComponent("calendar").coordinateSystem;
 	const rect = cs.getRect();
 	const info = cs.getRangeInfo?.();
