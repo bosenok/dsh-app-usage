@@ -75,8 +75,8 @@ console.log(`cache semantics: counted=${cached[0]?.total} cache=${cached[0]?.cac
 // The model breakdown: one row per model, with its days and last use.
 const breakdown = modelRows(dayList(days, 30), new Set(providerNames(dayList(days, 30))));
 const first = breakdown[0];
-if (breakdown.length !== 3) {
-	console.log(`[FAIL] ${breakdown.length} model rows, expected 3`);
+if (breakdown.length !== 4) {
+	console.log(`[FAIL] ${breakdown.length} model rows, expected 4`);
 	failed = true;
 }
 if (first?.model !== "anthropic/claude-sonnet-5" || first?.total !== 300) {
